@@ -292,77 +292,110 @@ ros2 topic echo /mavros/mission/reached
 ---
 
 ## Drone Footage
+### The *RED* shapes represent the obstacles and the *PURPLE* spahe represents the no-fly zone. I wanted to keep the simulation enviroment light-weight so I didn't create physical 3D models for them.
 ![Demo](https://github.com/ColorfulGoat/lecture9_path_panning_motion_control/blob/main/media/drone.gif)
 
-## Results
+The screenshots below show the PX4 mission execution pipeline. First, the planned path is uploaded to PX4 through MAVROS. Then PX4 is switched into `AUTO.MISSION`, the UAV is armed, and the mission progresses through the uploaded waypoints.
 
-## Demo Results
+---
 
-The following screenshots show the complete mission pipeline: the generated path is uploaded to PX4 through MAVROS, PX4 is switched into mission mode, the UAV is armed, and the mission progresses through the planned waypoints.
+### 1. Mission Upload
+
+The `mission_uploader` node receives the planned path with 22 poses, receives the GPS home position, converts the path into MAVROS mission items, clears the previous PX4 mission, and uploads the new mission successfully.
+
+Important confirmation:
+
+```text
+Mission push result: success=True, transferred=22
+Mission upload complete.
+```
+
+<p align="center">
+  <img src="media/sc4.png" alt="MAVROS mission upload success" width="900">
+</p>
+
+---
+
+### 2. Switch PX4 to Mission Mode
+
+PX4 is switched into `AUTO.MISSION` mode using the MAVROS `/mavros/set_mode` service.
+
+The response confirms that the mission mode command was sent successfully:
+
+```text
+mode_sent=True
+```
+
+<p align="center">
+  <img src="media/sc5.png" alt="PX4 AUTO.MISSION mode command" width="900">
+</p>
+
+---
+
+### 3. Arm the UAV
+
+The UAV is armed using the MAVROS `/mavros/cmd/arming` service.
+
+The response confirms that the simulated UAV was successfully armed and started executing the mission:
+
+```text
+success=True
+```
+
+<p align="center">
+  <img src="media/sc6.png" alt="PX4 UAV armed successfully" width="900">
+</p>
+
+---
+
+### 4. Waypoint Progress
+
+The topic `/mavros/mission/reached` was used to verify that the UAV progressed through the uploaded mission. Since the mission contains 22 waypoints, the indices go from `0` to `21`.
 
 <table>
   <tr>
-    <th>Step</th>
+    <th>Waypoint</th>
     <th>Screenshot</th>
-    <th>What it shows</th>
+    <th>Result</th>
   </tr>
-
   <tr>
-    <td><b>1. Mission upload</b></td>
-    <td><img src="media/sc4.png" width="420"></td>
-    <td>
-      The <code>mission_uploader</code> node receives the planned path with 22 poses, receives the GPS home position, converts the path into 22 MAVROS mission items, clears the previous PX4 mission, and uploads the new mission successfully. The important confirmation is <code>Mission push result: success=True, transferred=22</code>.
-    </td>
+    <td><b>Waypoint 5</b></td>
+    <td align="center"><img src="media/wp5.png" width="260"></td>
+    <td>The UAV reached <code>wp_seq: 5</code>, showing that the mission had started correctly.</td>
   </tr>
-
   <tr>
-    <td><b>2. Mission mode command</b></td>
-    <td><img src="media/sc5.png" width="420"></td>
-    <td>
-      PX4 is switched into <code>AUTO.MISSION</code> mode using the MAVROS <code>/mavros/set_mode</code> service. The response <code>mode_sent=True</code> confirms that the mission mode command was accepted by MAVROS and sent to PX4.
-    </td>
+    <td><b>Waypoint 10</b></td>
+    <td align="center"><img src="media/wp10.png" width="260"></td>
+    <td>The UAV reached <code>wp_seq: 10</code>, confirming continued mission progress.</td>
   </tr>
-
   <tr>
-    <td><b>3. UAV armed</b></td>
-    <td><img src="media/sc6.png" width="420"></td>
-    <td>
-      The UAV is armed using the MAVROS <code>/mavros/cmd/arming</code> service. The response <code>success=True</code> confirms that the simulated vehicle was successfully armed and ready to execute the uploaded mission.
-    </td>
+    <td><b>Waypoint 15</b></td>
+    <td align="center"><img src="media/wp15.png" width="260"></td>
+    <td>The UAV reached <code>wp_seq: 15</code>, showing progress through the intermediate planned waypoints.</td>
   </tr>
-
   <tr>
-    <td><b>4. Waypoint 5 reached</b></td>
-    <td><img src="media/wp5.png" width="220"></td>
-    <td>
-      The topic <code>/mavros/mission/reached</code> reports <code>wp_seq: 5</code>, showing that the UAV has started executing the mission and reached waypoint 5.
-    </td>
-  </tr>
-
-  <tr>
-    <td><b>5. Waypoint 10 reached</b></td>
-    <td><img src="media/wp10.png" width="220"></td>
-    <td>
-      The mission continues successfully. The UAV reaches waypoint 10, confirming that it is progressing through the uploaded path rather than remaining at the start.
-    </td>
-  </tr>
-
-  <tr>
-    <td><b>6. Waypoint 15 reached</b></td>
-    <td><img src="media/wp15.png" width="220"></td>
-    <td>
-      The UAV reaches waypoint 15. This shows continued mission execution through the intermediate planned waypoints generated by the 3D A* planner.
-    </td>
-  </tr>
-
-  <tr>
-    <td><b>7. Final waypoint reached</b></td>
-    <td><img src="media/wp21.png" width="220"></td>
-    <td>
-      The mission reaches <code>wp_seq: 21</code>. Since the uploaded mission contains 22 waypoints, indexed from 0 to 21, this confirms that the UAV reached the final waypoint of the planned mission.
-    </td>
+    <td><b>Final waypoint 21</b></td>
+    <td align="center"><img src="media/wp21.png" width="260"></td>
+    <td>The UAV reached <code>wp_seq: 21</code>. Since the mission has 22 waypoints indexed from 0 to 21, this confirms that the final waypoint was reached.</td>
   </tr>
 </table>
+
+---
+
+### Result Summary
+
+The demo confirms that the full pipeline works:
+
+```text
+3D A* planner
+→ planned ROS 2 path
+→ MAVROS mission upload
+→ PX4 AUTO.MISSION mode
+→ UAV armed
+→ waypoint execution up to final waypoint 21
+```
+
+---
 
 ## Notes
 
