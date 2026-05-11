@@ -1,0 +1,30 @@
+# ROS 2 build outputs
+build/
+install/
+log/
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# ROS/Gazebo/PX4 runtime files
+.ros/
+*.ulg
+*.bag
+*.db3
+*.log
+logs/
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Temporary backup folders
+ros2_ws/src_root_backup/
