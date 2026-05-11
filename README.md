@@ -1,6 +1,8 @@
 # ROS 2 PX4 Global Planner
 
-This repository contains my solution for **Aufgabe 1: Global Planner — 3D Path Planning**.
+Link to repo: https://github.com/ColorfulGoat/lecture9_path_panning_motion_control
+
+This repository contains my solution for **Aufgabe 1: Global Planner â€” 3D Path Planning**.
 
 The project is based on the provided PX4 simulation environment and adds a custom ROS 2 package called:
 
@@ -48,10 +50,10 @@ Important files:
 ```text
 uav_global_planner/
 +-- config/
-¦   +-- planner.yaml
+Â¦   +-- planner.yaml
 +-- launch/
-¦   +-- planner.launch.py
-¦   +-- mission_uploader.launch.py
+Â¦   +-- planner.launch.py
+Â¦   +-- mission_uploader.launch.py
 +-- uav_global_planner/
     +-- voxel_grid.py
     +-- astar_3d.py
