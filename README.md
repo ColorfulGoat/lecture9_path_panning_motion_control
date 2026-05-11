@@ -1,229 +1,202 @@
-# PX4 Perception
+# ROS 2 PX4 Global Planner
 
-**DevOps for Cyber-Physical Systems (HS 2026)**  
-**Repository:** https://github.com/ColorfulGoat/px4-sim
+This repository contains my solution for **Aufgabe 1: Global Planner � 3D Path Planning**.
+
+The project is based on the provided PX4 simulation environment and adds a custom ROS 2 package called:
+
+```text
+uav_global_planner
+```
+
+The package implements a simple 3D global planner for a UAV using **A\*** on a **voxel grid**. The generated path is visualized in RViz and uploaded to PX4 SITL as a MAVROS mission.
+
+Aufgabe 2 was optional and was not implemented.
 
 ---
 
-## Overview
+## Implementation Overview
 
-This repository implements two perception tasks for a simulated UAV (Unmanned Aerial Vehicle) using PX4 SITL, ROS2 Jazzy, and Gazebo Harmonic running inside a fully containerized Docker environment.
+The implemented planner includes:
 
-- **Aufgabe 1:** Real-time object detection using YOLOv8 on the drone's RGB camera stream
-- **Aufgabe 2:** Depth estimation and 3D point cloud generation with RANSAC ground plane segmentation
+- 3D voxel grid representation
+- A* path planning in 3D
+- static obstacle boxes
+- no-fly-zone boxes
+- altitude limits
+- RViz visualization
+- MAVROS mission upload
+- PX4 SITL mission execution in Gazebo
+
+The planner uses a static environment defined in:
+
+```text
+ros2_ws/src/uav_global_planner/config/planner.yaml
+```
+
+The depth camera / point cloud bridge is not required for this implementation, because the obstacles and no-fly zone are defined directly in the planner configuration.
 
 ---
 
-## Environment & Prerequisites
+## Main Package
 
-- Docker Desktop (Windows 11)
-- Git Bash (for running shell scripts on Windows)
-- NoVNC browser access for GUI visualization
-
-### Stack
-- ROS2 Jazzy Jalisco
-- Gazebo Harmonic
-- PX4 SITL (`gz_x500_depth` vehicle)
-- MAVROS
-- Ultralytics YOLOv8
-- Open3D / scikit-learn (RANSAC)
-
----
-
-## Setup & Installation
-
-### 1. Clone the repository
-
-```bash
-git clone https://github.com/ColorfulGoat/px4-sim
-cd px4-sim
+```text
+ros2_ws/src/uav_global_planner
 ```
 
-### 2. Fix line endings (Windows only)
+Important files:
 
-```bash
-sed -i 's/\r//' build.sh
-sed -i 's/\r//' px4_entrypoint.sh
-sed -i 's/\r//' ros_entrypoint.sh
-```
-
-### 3. Build the Docker environment
-
-Open Git Bash in VS Code and run:
-
-```bash
-bash build.sh --all
-```
-
-> ⚠️ This will take 20–40 minutes on first run as it downloads and builds all dependencies.
-
-### 4. Start the containers
-
-```bash
-docker-compose up
+```text
+uav_global_planner/
++-- config/
+�   +-- planner.yaml
++-- launch/
+�   +-- planner.launch.py
+�   +-- mission_uploader.launch.py
++-- uav_global_planner/
+    +-- voxel_grid.py
+    +-- astar_3d.py
+    +-- global_planner_node.py
+    +-- mavros_mission_node.py
 ```
 
 ---
 
-## Running the Simulation
+## ROS 2 Nodes
 
-You will need **5 terminal tabs** open simultaneously, all using Git Bash inside VS Code. For tabs 2–5, exec into the running container:
+### `global_planner`
+
+This node:
+
+- loads the configuration from `planner.yaml`
+- builds the 3D voxel grid
+- marks obstacles and no-fly zones as occupied
+- runs A*
+- publishes the planned path and RViz markers
+
+Published topics:
+
+```text
+/planned_path
+/planning_markers
+```
+
+### `mission_uploader`
+
+This node:
+
+- subscribes to `/planned_path`
+- receives GPS data from MAVROS
+- converts local waypoints into approximate GPS mission waypoints
+- clears the old PX4 mission
+- uploads the new mission to PX4
+
+Used MAVROS services:
+
+```text
+/mavros/mission/clear
+/mavros/mission/push
+/mavros/mission/pull
+/mavros/set_mode
+/mavros/cmd/arming
+```
+
+---
+
+## Build
+
+Start the container:
+
+```bash
+docker compose up -d
+```
+
+Enter the container:
 
 ```bash
 docker exec -it px4_sitl bash
 ```
 
-### Tab 1 — Docker Compose (leave running)
+Build the planner package:
+
 ```bash
-docker-compose up
+cd /root/ros2_ws
+source /opt/ros/jazzy/setup.bash
+colcon build --packages-select uav_global_planner
+source install/setup.bash
 ```
 
-### Tab 2 — PX4 SITL + Gazebo
+Check executables:
+
 ```bash
+ros2 pkg executables uav_global_planner
+```
+
+Expected:
+
+```text
+uav_global_planner global_planner
+uav_global_planner mission_uploader
+```
+
+---
+
+## Run Demo
+
+### 1. Start PX4 SITL with lightweight Gazebo model
+
+```bash
+docker exec -it px4_sitl bash
 cd /root/PX4-Autopilot
-PX4_GZ_WORLD=baylands make px4_sitl gz_x500_depth
+make px4_sitl gz_x500
 ```
 
-Once loaded, arm and take off from the PX4 console:
+The lightweight `gz_x500` model is used because Gazebo through NoVNC was slow with heavier worlds/models.
+
+---
+
+### 2. Start MAVROS
+
 ```bash
-param set COM_ARM_WO_GPS 1
-param set COM_RC_IN_MODE 4
-param set NAV_DLL_ACT 0
-param set NAV_RCL_ACT 0
-commander takeoff
+docker exec -it px4_sitl bash
+source /opt/ros/jazzy/setup.bash
+ros2 launch mavros px4.launch fcu_url:=udp://:14540@localhost:14557
 ```
 
-### Tab 3 — ROS-Gazebo Bridge
+Check connection:
+
 ```bash
-ros2 run ros_gz_bridge parameter_bridge \
-  /world/baylands/model/x500_depth_0/link/camera_link/sensor/IMX214/image@sensor_msgs/msg/Image@gz.msgs.Image \
-  /world/baylands/model/x500_depth_0/link/camera_link/sensor/IMX214/camera_info@sensor_msgs/msg/CameraInfo@gz.msgs.CameraInfo \
-  /depth_camera@sensor_msgs/msg/Image@gz.msgs.Image \
-  /depth_camera/points@sensor_msgs/msg/PointCloud2@gz.msgs.PointCloudPacked
+ros2 topic echo /mavros/state --once
 ```
 
-### Tab 4 — YOLO Detection Node (Aufgabe 1)
-```bash
-cd /root/ros2_ws
-source install/setup.bash
-ros2 run yolo_detection yolo_node
-```
+Expected:
 
-### Tab 5 — Point Cloud Node (Aufgabe 2)
-```bash
-cd /root/ros2_ws
-source install/setup.bash
-ros2 run point_cloud_node pc_node
+```text
+connected: true
 ```
 
 ---
 
-## GUI Access
-
-Open your browser and navigate to:
-
-```
-http://localhost:6080/vnc.html
-```
-
-Password: `1234`
-
-This opens the NoVNC desktop where you can run RViz2 and rqt_image_view.
-
----
-
-## Aufgabe 1: Object Detection with YOLO
-
-### Objective
-Develop a ROS2 node that performs real-time object detection on the drone's RGB camera stream using YOLOv8.
-
-### Implementation
-
-The YOLO detection node is located at:
-```
-ros2_ws/src/yolo_detection/yolo_detection/yolo_node.py
-```
-
-It subscribes to the drone's RGB camera topic, runs YOLOv8n inference on each frame, and publishes an annotated image with bounding boxes, class labels, confidence scores, FPS and latency overlaid.
-
-**ROS2 Topics:**
-
-| Topic | Type | Description |
-|---|---|---|
-| `/world/baylands/model/x500_depth_0/link/camera_link/sensor/IMX214/image` | `sensor_msgs/Image` | Input RGB camera feed |
-| `/yolo/detection_image` | `sensor_msgs/Image` | Annotated output with detections |
-
-### Visualizing Detections
-
-Inside the NoVNC desktop, open a terminal and run:
+### 3. Start the planner
 
 ```bash
+docker exec -it px4_sitl bash
 source /opt/ros/jazzy/setup.bash
 source /root/ros2_ws/install/setup.bash
-ros2 run rqt_image_view rqt_image_view
+ros2 launch uav_global_planner planner.launch.py
 ```
 
-Select `/yolo/detection_image` from the dropdown to see the live annotated feed.
+Expected output includes:
 
-### Model & Performance
-
-- Model: YOLOv8n (nano) — optimized for CPU inference
-- Confidence threshold: 0.1
-- Average latency: ~400–600ms (CPU only, no GPU in container)
-- Detected object classes include: person, car, and other COCO dataset classes
-
-### Scene Setup
-
-The simulation uses the **Baylands** world with the following objects spawned:
-- Rescue Randy (person model) — at position (0, 5, 0)
-- Prius Hybrid (car model) — at position (5, 0, 0)
-
-To spawn models inside the container:
-```bash
-gz fuel download -u "https://fuel.gazebosim.org/1.0/OpenRobotics/models/Rescue Randy Sitting"
-gz service -s /world/baylands/create \
-  --reqtype gz.msgs.EntityFactory \
-  --reptype gz.msgs.Boolean \
-  --timeout 5000 \
-  --req 'sdf_filename: "/root/.gz/fuel/fuel.gazebosim.org/openrobotics/models/rescue randy sitting/1/model.sdf" pose: {position: {x: 0, y: 5, z: 0}}'
+```text
+Running 3D A* planner...
+A* planning successful.
 ```
-
-### Screenshots
-
-> Add your YOLO detection screenshots here.  
-> Example: `![YOLO Detection](screenshots/yolo_detection.png)`
 
 ---
 
-## Aufgabe 2: Depth Estimation and 3D Point Cloud Generation
+### 4. Visualize in RViz
 
-### Objective
-Implement a ROS2 node that processes depth camera data, generates 3D point clouds, and segments the ground plane from obstacles using RANSAC.
-
-### Implementation
-
-The point cloud node is located at:
-```
-ros2_ws/src/point_cloud_node/point_cloud_node/pc_node.py
-```
-
-It subscribes to the depth camera point cloud topic, filters out invalid (inf/NaN) points, applies RANSAC to separate the ground plane from obstacles, and publishes two separate filtered point clouds.
-
-**ROS2 Topics:**
-
-| Topic | Type | Description |
-|---|---|---|
-| `/depth_camera/points` | `sensor_msgs/PointCloud2` | Raw point cloud from depth camera |
-| `/pointcloud/obstacles` | `sensor_msgs/PointCloud2` | Filtered obstacle points (non-ground) |
-| `/pointcloud/ground` | `sensor_msgs/PointCloud2` | Segmented ground plane points |
-
-### RANSAC Ground Plane Segmentation
-
-The node uses scikit-learn's `RANSACRegressor` to fit a plane model `z = ax + by + c` to the point cloud. Points within 10cm of the fitted plane are classified as ground; all others are classified as obstacles.
-
-### Visualizing in RViz2
-
-Inside the NoVNC desktop, open a terminal and run:
+Inside the NoVNC desktop:
 
 ```bash
 source /opt/ros/jazzy/setup.bash
@@ -231,82 +204,113 @@ source /root/ros2_ws/install/setup.bash
 rviz2
 ```
 
-Configure RViz2:
-1. Set **Fixed Frame** to `camera_link`
-2. Click **Add** → **By topic** → `/pointcloud/obstacles` → **PointCloud2**
-3. Click **Add** → **By topic** → `/pointcloud/ground` → **PointCloud2**
-4. Set obstacle cloud color to **red** and ground cloud color to **green**
+In RViz:
 
-### Screenshots
+```text
+Fixed Frame: map
+Path topic: /planned_path
+MarkerArray topic: /planning_markers
+```
 
-> Add your RViz2 point cloud screenshots here.  
-> Example: `![Point Cloud RViz2](screenshots/rviz2_pointcloud.png)`
+RViz shows:
+
+- green line: planned path
+- red boxes: obstacles
+- purple box: no-fly zone
+- blue sphere: start
+- yellow sphere: goal
 
 ---
 
-## Repository Structure
+### 5. Upload the mission
 
+```bash
+docker exec -it px4_sitl bash
+source /opt/ros/jazzy/setup.bash
+source /root/ros2_ws/install/setup.bash
+ros2 launch uav_global_planner mission_uploader.launch.py
 ```
-px4-sim/
-├── build.sh                  # Build script for Docker environment
-├── docker-compose.yml        # Docker services configuration
-├── px4_entrypoint.sh         # PX4 container entrypoint
-├── ros_entrypoint.sh         # ROS2 container entrypoint
-└── ros2_ws/
-    └── src/
-        ├── yolo_detection/   # Aufgabe 1: YOLO detection node
-        │   └── yolo_detection/
-        │       └── yolo_node.py
-        ├── point_cloud_node/ # Aufgabe 2: Point cloud node
-        │   └── point_cloud_node/
-        │       └── pc_node.py
-        └── yolo_msgs/        # Custom ROS2 message definitions
+
+Expected output:
+
+```text
+Mission push result: success=True
+Mission upload complete.
+```
+
+Verify:
+
+```bash
+ros2 service call /mavros/mission/pull mavros_msgs/srv/WaypointPull "{}"
+```
+
+Expected:
+
+```text
+success=True
+wp_received=...
 ```
 
 ---
 
-## Dependencies
+### 6. Start mission execution
 
-All dependencies are pre-installed in the Docker container. Key Python packages:
+Set mission mode first:
 
-```
-ultralytics==8.4.41
-numpy==1.26.4
-scikit-learn
-open3d
-torch==2.2.0
+```bash
+ros2 service call /mavros/set_mode mavros_msgs/srv/SetMode "{base_mode: 0, custom_mode: 'AUTO.MISSION'}"
 ```
 
-> ⚠️ **Note on numpy:** This environment requires `numpy==1.26.4` strictly. Installing other packages may upgrade numpy and break cv_bridge compatibility. If this happens, run:
-> ```bash
-> python3 -m pip install "numpy==1.26.4" --break-system-packages --force-reinstall
-> ```
+Then arm:
+
+```bash
+ros2 service call /mavros/cmd/arming mavros_msgs/srv/CommandBool "{value: true}"
+```
+
+Check state:
+
+```bash
+ros2 topic echo /mavros/state --once
+```
+
+Expected:
+
+```text
+mode: AUTO.MISSION
+armed: true
+connected: true
+```
+
+Monitor waypoint progress:
+
+```bash
+ros2 topic echo /mavros/mission/reached
+```
 
 ---
 
-## Troubleshooting
+## Notes
 
-**`exec /px4_entrypoint.sh: no such file or directory`**  
-Windows line endings issue. Fix with:
-```bash
-sed -i 's/\r//' px4_entrypoint.sh
+The final demo uses the lightweight `gz_x500` model. The planner itself does not depend on Gazebo depth-camera data. It uses a static voxel map from `planner.yaml`, so the depth-camera bridge is not required.
+
+Generated ROS 2 folders are ignored and should not be committed:
+
+```text
+ros2_ws/build
+ros2_ws/install
+ros2_ws/log
 ```
 
-**`ModuleNotFoundError: No module named 'ultralytics'`**  
-Reinstall with:
-```bash
-python3 -m pip install ultralytics --break-system-packages --ignore-installed
-```
+---
 
-**`RuntimeError: Numpy is not available`**  
-Pin numpy back to 1.26.4:
-```bash
-python3 -m pip install "numpy==1.26.4" --break-system-packages --force-reinstall
-```
+## Summary
 
-**Drone won't arm**  
-Run in PX4 console:
-```bash
-param set COM_ARM_WO_GPS 1
-param set COM_RC_IN_MODE 4
+This project implements a complete minimal global-planning pipeline:
+
+```text
+3D voxel grid
+? A* global planner
+? RViz visualization
+? MAVROS mission upload
+? PX4 AUTO.MISSION execution in Gazebo
 ```
